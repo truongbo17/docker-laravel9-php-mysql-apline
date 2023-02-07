@@ -1,0 +1,37 @@
+version: '3'
+
+services:
+    app:
+        container_name: laravel-app
+        build:
+            context: ./
+            dockerfile: Dockerfile
+        working_dir: /var/www/api
+        restart: unless-stopped
+        depends_on:
+            - signature
+        ports:
+            - "${PORT_APP}:80"
+        volumes:
+            - ./app/storage/logs/nginx:/var/log/nginx
+            - ./.docker/.composer:/root/.composer
+        networks:
+            - laravel
+    mysql:
+        image: mysql
+        container_name: mysql
+        restart: unless-stopped
+        tty: true
+        ports:
+            - "3306:3306"
+        volumes:
+            - ./mysql:/var/lib/mysql
+        environment:
+            MYSQL_DATABASE: laravel_docker
+            MYSQL_USER: user
+            MYSQL_PASSWORD: user
+            MYSQL_ROOT_PASSWORD: root
+            SERVICE_TAGS: dev
+            SERVICE_NAME: mysql
+        networks:
+            - laravel
