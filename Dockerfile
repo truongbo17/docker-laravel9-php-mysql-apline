@@ -31,7 +31,16 @@ RUN apk --no-cache add \
         php81-gd \
         nginx \
         runit \
-        curl
+        curl \
+        zip \
+        vim \
+        unzip \
+        supervisor \
+        cron
+
+# Copy supervisor and cron
+COPY .docker/supervisord/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY .docker/cron/cron /etc/cron.d/self-cron
 
 # Configure nginx
 COPY .docker/nginx.conf /etc/nginx/nginx.conf
@@ -48,9 +57,10 @@ COPY .docker/php.ini /etc/php8.1/conf.d/custom.ini
 COPY .docker/boot.sh /sbin/boot.sh
 
 RUN adduser -D -u 1000 -g 1000 -s /bin/sh www && \
-    mkdir -p /var/www/api && \
+    mkdir -p /var/www/app && \
     mkdir -p /var/cache/nginx && \
-    chown -R www:www /var/www/api && \
+    mkdir -p /var/log/supervisor && \
+    chown -R www:www /var/www/app && \
     chown -R www:www /run && \
     chown -R www:www /var/lib/nginx && \
     chown -R www:www /var/log/nginx
@@ -60,31 +70,40 @@ COPY .docker/php.run /etc/service/php/run
 
 RUN chmod +x /etc/service/nginx/run \
     && chmod +x /etc/service/php/run \
-    && ls -al /var/www/api/
-
+    && ls -al /var/www/app/
 
 # Install Composer
 RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 RUN composer clear-cache
 
 # Set prmission folder laravel
-COPY --chown=www ./app /var/www/api
-RUN chmod 0777 -R /var/www/api/bootstrap
-RUN chmod 0777 -R /var/www/api/storage
+COPY --chown=www ./app /var/www/app
+RUN chmod 0777 -R /var/www/app/bootstrap
+RUN chmod 0777 -R /var/www/app/storage
 # RUN rm -rf /root/.composer
 
+# Clear cache Laravel
 USER www
-RUN cd /var/www/api && composer install
-RUN cd /var/www/api && composer dump-autoload
-RUN cd /var/www/api && php artisan cache:clear
-RUN cd /var/www/api && php artisan config:clear
-RUN cd /var/www/api && php artisan view:clear
-RUN cd /var/www/api && php artisan route:clear
+RUN cd /var/www/app && composer install
+RUN cd /var/www/app && composer dump-autoload
+RUN cd /var/www/app && php artisan cache:clear
+RUN cd /var/www/app && php artisan config:clear
+RUN cd /var/www/app && php artisan view:clear
+RUN cd /var/www/app && php artisan route:clear
+
+# Give execution rights on the cron job
+RUN chmod 0644 /etc/cron.d/self-cron
+# Apply cron job
+RUN crontab /etc/cron.d/self-cron
+# Create the log file to be able to run tail
+RUN touch /var/log/cron.log
 
 # Expose the port nginx is reachable on
-EXPOSE 80
+EXPOSE 22 80
 USER root
-# Let boot start nginx & php-fpm
+# Let boot start nginx & php-fpm & run supervisord
 CMD ["sh", "/sbin/boot.sh"]
+CMD ["supervisord", "--nodaemon", "--configuration", "/etc/supervisor/conf.d/supervisord.conf"]
 
+# Healthcheck ping fpm ping
 HEALTHCHECK --timeout=10s CMD curl --silent --fail http://127.0.0.1/fpm-ping

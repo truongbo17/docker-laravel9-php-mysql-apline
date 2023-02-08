@@ -6,7 +6,7 @@ services:
         build:
             context: ./
             dockerfile: Dockerfile
-        working_dir: /var/www/api
+        working_dir: /var/www/app
         restart: unless-stopped
         depends_on:
             - signature
